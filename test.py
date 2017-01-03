@@ -28,16 +28,3 @@ print(d)
 #push data to the data stream
 reply = dsc.push_data(d.items())
 print(reply)
-
-
-
-
-
-
-
-
-
-
-
-
-
