@@ -1,5 +1,5 @@
 #upython standard libraries
-import sys, time, ujson, gc, micropython
+import sys, time, ujson, gc, micropython, network
 
 #local imports
 from am2315 import AM2315
@@ -14,11 +14,20 @@ SAMPLE_DELAY = 1 #seconds
 #should never be posted online
 config = ujson.load(open("SECRET_CONFIG.json",'r'))
 
-
-
 #configure sensor interface
 ht_sensor = AM2315()
 
+#check on the network status and wait until connected 
+#NOTE this is import after calling machine.reset()
+wlan = network.WLAN(network.STA_IF)
+for i in range(5):
+    if wlan.isconnected():
+        break
+    time.sleep(1.0)
+    if DEBUG:
+        print("waiting for WLAN to connect")
+else:
+    raise Exception("timed out waiting for network connection")
 
 #configure the persistent data stream client
 dbs = config['database_server_settings']
