@@ -25,17 +25,18 @@ class DataStreamClient(object):
         if DEBUG:
             print(req)
         #open a web socket and send GET request
-        s = socket.socket()
-        s.connect(socket.getaddrinfo(self.host, 80)[0][-1])
-        s.send(bytes(req,'utf8'))
+        sock = socket.socket()
+        sock.connect(socket.getaddrinfo(self.host, 80)[0][-1])
+        sock.send(bytes(req,'utf8'))
         #receive reply
         buff = []
         while True:
-            data = s.recv(100)
+            data = sock.recv(100)
             if data:
                 buff.append(str(data, 'utf8'))
             else:
                 break
+        sock.close()
         reply = "".join(buff)
         if DEBUG:
             print(reply)
