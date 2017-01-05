@@ -8,7 +8,7 @@ from data_stream import DataStreamClient
 #DEBUG = False
 DEBUG = True
 
-SAMPLE_DELAY = 1 #seconds
+SAMPLE_DELAY = 10 #seconds
 
 #read the SECRET configuration file, NOTE this contains PRIVATE keys and 
 #should never be posted online
