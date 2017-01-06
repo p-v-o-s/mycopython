@@ -287,6 +287,7 @@ uint8_t Softuart_Read(Softuart *s)
   // Read from "head"
   uint8_t d = s->buffer.receive_buffer[s->buffer.receive_buffer_head]; // grab next byte
   s->buffer.receive_buffer_head = (s->buffer.receive_buffer_head + 1) % SOFTUART_MAX_RX_BUFF; 
+  //d = 255; //FIXME for testing only
   return d;
 }
 

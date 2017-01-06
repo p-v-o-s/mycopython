@@ -29,19 +29,28 @@
 #include <string.h>
 
 #include "ets_sys.h"
+#include "mem.h"
 #include "softuart.h"
+
 
 #include "py/runtime.h"
 #include "py/stream.h"
 #include "py/mperrno.h"
+#include "py/mphal.h"
+//#include "py/malloc.h"
 #include "modmachine.h"
 
 // UartDev is defined and initialized in rom code.
 //FXIME //extern UartDevice UartDev;
 
+Softuart softuartDevice;
+
 typedef struct _pyb_softuart_obj_t {
     mp_obj_base_t base;
-    uint8_t uart_id;
+    //uint8_t uart_id;
+    Softuart *softuart_ptr; //point to instance of driver object
+    pyb_pin_obj_t *tx;
+    pyb_pin_obj_t *rx;
     uint8_t bits;
     uint8_t parity;
     uint8_t stop;
@@ -57,103 +66,49 @@ STATIC const char *_parity_name[] = {"None", "1", "0"};
 
 STATIC void pyb_softuart_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     pyb_softuart_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "SoftUART(%u, baudrate=%u, bits=%u, parity=%s, stop=%u, timeout=%u, timeout_char=%u)",
-        self->uart_id, self->baudrate, self->bits, _parity_name[self->parity],
+    mp_printf(print, "SoftUART(tx=%u, rx=%u, baudrate=%u, bits=%u, parity=%s, stop=%u, timeout=%u, timeout_char=%u)",
+        mp_obj_get_pin(self->tx), mp_obj_get_pin(self->rx),
+        self->baudrate, self->bits, _parity_name[self->parity],
         self->stop, self->timeout, self->timeout_char);
 }
 
 STATIC void pyb_softuart_init_helper(pyb_softuart_obj_t *self, size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
-    enum { ARG_baudrate, ARG_bits, ARG_parity, ARG_stop, ARG_timeout, ARG_timeout_char };
+    enum { ARG_tx, ARG_rx, ARG_baudrate};
     static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_tx, MP_ARG_REQUIRED | MP_ARG_OBJ },
+        { MP_QSTR_rx, MP_ARG_REQUIRED | MP_ARG_OBJ },
         { MP_QSTR_baudrate, MP_ARG_INT, {.u_int = 0} },
-        { MP_QSTR_bits, MP_ARG_INT, {.u_int = 0} },
-        { MP_QSTR_parity, MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
-        { MP_QSTR_stop, MP_ARG_INT, {.u_int = 0} },
-        //{ MP_QSTR_tx, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
-        //{ MP_QSTR_rx, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
+        //{ MP_QSTR_bits, MP_ARG_INT, {.u_int = 0} },
+        //{ MP_QSTR_parity, MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
+        //{ MP_QSTR_stop, MP_ARG_INT, {.u_int = 0} },
         { MP_QSTR_timeout, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
         { MP_QSTR_timeout_char, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
     };
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+    
+    //assign the pins
+    self->tx = mp_obj_get_pin_obj(args[ARG_tx].u_obj);
+    Softuart_SetPinTx(&softuartDevice, mp_obj_get_pin(self->tx));
+    self->rx = mp_obj_get_pin_obj(args[ARG_rx].u_obj);
+    Softuart_SetPinRx(&softuartDevice, mp_obj_get_pin(self->rx));
 
     // set baudrate
     if (args[ARG_baudrate].u_int > 0) {
         self->baudrate = args[ARG_baudrate].u_int;
+        Softuart_Init(&softuartDevice, self->baudrate);
         //UartDev.baut_rate = self->baudrate; // Sic!
     }
 
     // set data bits
-    switch (args[ARG_bits].u_int) {
-        case 0:
-            break;
-        case 5:
-            //UartDev.data_bits = UART_FIVE_BITS;
-            self->bits = 5;
-            break;
-        case 6:
-            //UartDev.data_bits = UART_SIX_BITS;
-            self->bits = 6;
-            break;
-        case 7:
-            //UartDev.data_bits = UART_SEVEN_BITS;
-            self->bits = 7;
-            break;
-        case 8:
-            //UartDev.data_bits = UART_EIGHT_BITS;
-            self->bits = 8;
-            break;
-        default:
-            nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_ValueError, "invalid data bits"));
-            break;
-    }
+    self->bits = 8;   //no other options are supported
+ 
 
     // set parity
-    if (args[ARG_parity].u_obj != MP_OBJ_NULL) {
-        if (args[ARG_parity].u_obj == mp_const_none) {
-            //UartDev.parity = UART_NONE_BITS;
-            //UartDev.exist_parity = UART_STICK_PARITY_DIS;
-            self->parity = 0;
-        } else {
-            mp_int_t parity = mp_obj_get_int(args[ARG_parity].u_obj);
-            //UartDev.exist_parity = UART_STICK_PARITY_EN;
-            if (parity & 1) {
-                //UartDev.parity = UART_ODD_BITS;
-                self->parity = 1;
-            } else {
-                //UartDev.parity = UART_EVEN_BITS;
-                self->parity = 2;
-            }
-        }
-    }
+    self->parity = 0; //"NONE" no other options are supported
 
     // set stop bits
-    switch (args[ARG_stop].u_int) {
-        case 0:
-            break;
-        case 1:
-            //FIXME //UartDev.stop_bits = UART_ONE_STOP_BIT;
-            self->stop = 1;
-            break;
-        case 2:
-            //FIXME //UartDev.stop_bits = UART_TWO_STOP_BIT;
-            self->stop = 2;
-            break;
-        default:
-            nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_ValueError, "invalid stop bits"));
-            break;
-    }
-
-    // set timeout
-    self->timeout = args[ARG_timeout].u_int;
-
-    // set timeout_char
-    // make sure it is at least as long as a whole character (13 bits to be safe)
-    self->timeout_char = args[ARG_timeout_char].u_int;
-    uint32_t min_timeout_char = 13000 / self->baudrate + 1;
-    if (self->timeout_char < min_timeout_char) {
-        self->timeout_char = min_timeout_char;
-    }
+    self->stop = 1;  //"NONE" no other options are supported
 
     // setup
     //FIXME //uart_setup(self->uart_id);
@@ -162,16 +117,11 @@ STATIC void pyb_softuart_init_helper(pyb_softuart_obj_t *self, size_t n_args, co
 STATIC mp_obj_t pyb_softuart_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 1, MP_OBJ_FUN_ARGS_MAX, true);
 
-    // get uart id
-    mp_int_t uart_id = mp_obj_get_int(args[0]);
-    if (uart_id != 0 && uart_id != 1) {
-        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_ValueError, "SoftUART(%d) does not exist", uart_id));
-    }
-
     // create instance
     pyb_softuart_obj_t *self = m_new_obj(pyb_softuart_obj_t);
     self->base.type = &pyb_softuart_type;
-    self->uart_id = uart_id;
+    //FIXME removed //self->uart_id = uart_id;
+    //self->softuart_ptr = os_malloc(sizeof(Softuart));
     self->baudrate = 115200;
     self->bits = 8;
     self->parity = 0;
@@ -182,7 +132,7 @@ STATIC mp_obj_t pyb_softuart_make_new(const mp_obj_type_t *type, size_t n_args, 
     // init the peripheral
     mp_map_t kw_args;
     mp_map_init_fixed_table(&kw_args, n_kw, args + n_args);
-    pyb_softuart_init_helper(self, n_args - 1, args + 1, &kw_args);
+    pyb_softuart_init_helper(self, n_args, args, &kw_args);
 
     return MP_OBJ_FROM_PTR(self);
 }
@@ -204,11 +154,7 @@ STATIC const mp_rom_map_elem_t pyb_softuart_locals_dict_table[] = {
 STATIC MP_DEFINE_CONST_DICT(pyb_softuart_locals_dict, pyb_softuart_locals_dict_table);
 
 STATIC mp_uint_t pyb_softuart_read(mp_obj_t self_in, void *buf_in, mp_uint_t size, int *errcode) {
-    pyb_softuart_obj_t *self = MP_OBJ_TO_PTR(self_in);
-
-    if (self->uart_id == 1) {
-        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_OSError, "SoftUART(1) can't read"));
-    }
+    //pyb_softuart_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
     // make sure we want at least 1 char
     if (size == 0) {
@@ -223,15 +169,15 @@ STATIC mp_uint_t pyb_softuart_read(mp_obj_t self_in, void *buf_in, mp_uint_t siz
 //    }
 
     // read the data
-    //FIXME //uint8_t *buf = buf_in;
-    //FIXME
-//    for (;;) {
-//        *buf++ = uart_rx_char();
-//        if (--size == 0 || !uart_rx_wait(self->timeout_char * 1000)) {
-//            // return number of bytes read
-//            return buf - (uint8_t*)buf_in;
-//        }
-//    }
+    uint8_t *buf = buf_in;
+    while (Softuart_Available(&softuartDevice)) {
+        *buf++ = Softuart_Read(&softuartDevice);
+        //if (--size == 0 || !uart_rx_wait(self->timeout_char * 1000)) {
+        if (--size == 0) {
+            // return number of bytes read
+            return buf - (uint8_t*)buf_in;
+        }
+    }
     return 0; //FIXME
 }
 
