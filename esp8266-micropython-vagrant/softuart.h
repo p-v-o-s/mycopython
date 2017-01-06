@@ -31,7 +31,9 @@ typedef struct {
 
 
 BOOL Softuart_Available(Softuart *s);
-void Softuart_Intr_Handler(Softuart *s);
+uint32_t Softuart_Flush(Softuart *s);
+BOOL Softuart_rxWait(Softuart *s, uint32_t timeout_us);
+void Softuart_Intr_Handler(void *p);  //void* for type compatibility with etshal.h: void ets_isr_attach(int irq_no, void (*handler)(void *), void *arg);
 void Softuart_SetPinRx(Softuart *s, uint8_t gpio_id);
 void Softuart_SetPinTx(Softuart *s, uint8_t gpio_id);
 void Softuart_EnableRs485(Softuart *s, uint8_t gpio_id);

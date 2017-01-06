@@ -73,7 +73,7 @@ STATIC void pyb_softuart_print(const mp_print_t *print, mp_obj_t self_in, mp_pri
 }
 
 STATIC void pyb_softuart_init_helper(pyb_softuart_obj_t *self, size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
-    enum { ARG_tx, ARG_rx, ARG_baudrate};
+    enum { ARG_tx, ARG_rx, ARG_baudrate, ARG_timeout, ARG_timeout_char};
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_tx, MP_ARG_REQUIRED | MP_ARG_OBJ },
         { MP_QSTR_rx, MP_ARG_REQUIRED | MP_ARG_OBJ },
@@ -81,8 +81,8 @@ STATIC void pyb_softuart_init_helper(pyb_softuart_obj_t *self, size_t n_args, co
         //{ MP_QSTR_bits, MP_ARG_INT, {.u_int = 0} },
         //{ MP_QSTR_parity, MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
         //{ MP_QSTR_stop, MP_ARG_INT, {.u_int = 0} },
-        { MP_QSTR_timeout, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
-        { MP_QSTR_timeout_char, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
+        { MP_QSTR_timeout, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 1000} },
+        { MP_QSTR_timeout_char, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 10} },
     };
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args, pos_args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
@@ -109,6 +109,17 @@ STATIC void pyb_softuart_init_helper(pyb_softuart_obj_t *self, size_t n_args, co
 
     // set stop bits
     self->stop = 1;  //"NONE" no other options are supported
+    
+    // set timeout
+    self->timeout = args[ARG_timeout].u_int;
+
+    // set timeout_char
+    // make sure it is at least as long as a whole character (13 bits to be safe)
+    self->timeout_char = args[ARG_timeout_char].u_int;
+    uint32_t min_timeout_char = 13000 / self->baudrate + 1;
+    if (self->timeout_char < min_timeout_char) {
+        self->timeout_char = min_timeout_char;
+}
 
     // setup
     //FIXME //uart_setup(self->uart_id);
@@ -122,7 +133,7 @@ STATIC mp_obj_t pyb_softuart_make_new(const mp_obj_type_t *type, size_t n_args, 
     self->base.type = &pyb_softuart_type;
     //FIXME removed //self->uart_id = uart_id;
     //self->softuart_ptr = os_malloc(sizeof(Softuart));
-    self->baudrate = 115200;
+    self->baudrate = 9600;
     self->bits = 8;
     self->parity = 0;
     self->stop = 1;
@@ -143,18 +154,28 @@ STATIC mp_obj_t pyb_softuart_init(size_t n_args, const mp_obj_t *args, mp_map_t 
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(pyb_softuart_init_obj, 1, pyb_softuart_init);
 
+STATIC mp_obj_t pyb_softuart_flush(mp_obj_t self_in) {
+    //pyb_softuart_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    Softuart_Flush(&softuartDevice); //reset the rx buffer to empty
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(pyb_softuart_flush_obj, pyb_softuart_flush);
+
+
 STATIC const mp_rom_map_elem_t pyb_softuart_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&pyb_softuart_init_obj) },
+    { MP_ROM_QSTR(MP_QSTR_flush), MP_ROM_PTR(&pyb_softuart_flush_obj) },
     { MP_ROM_QSTR(MP_QSTR_read), MP_ROM_PTR(&mp_stream_read_obj) },
     { MP_ROM_QSTR(MP_QSTR_readline), MP_ROM_PTR(&mp_stream_unbuffered_readline_obj) },
     { MP_ROM_QSTR(MP_QSTR_readinto), MP_ROM_PTR(&mp_stream_readinto_obj) },
     { MP_ROM_QSTR(MP_QSTR_write), MP_ROM_PTR(&mp_stream_write_obj) },
+    
 };
 
 STATIC MP_DEFINE_CONST_DICT(pyb_softuart_locals_dict, pyb_softuart_locals_dict_table);
 
 STATIC mp_uint_t pyb_softuart_read(mp_obj_t self_in, void *buf_in, mp_uint_t size, int *errcode) {
-    //pyb_softuart_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    pyb_softuart_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
     // make sure we want at least 1 char
     if (size == 0) {
@@ -162,18 +183,16 @@ STATIC mp_uint_t pyb_softuart_read(mp_obj_t self_in, void *buf_in, mp_uint_t siz
     }
 
     // wait for first char to become available
-    //FIXME
-//    if (!uart_rx_wait(self->timeout * 1000)) {
-//        *errcode = MP_EAGAIN;
-//        return MP_STREAM_ERROR;
-//    }
+    if (!Softuart_rxWait(&softuartDevice, self->timeout * 1000)) {
+        *errcode = MP_EAGAIN;
+        return MP_STREAM_ERROR;
+    }
 
     // read the data
     uint8_t *buf = buf_in;
     while (Softuart_Available(&softuartDevice)) {
         *buf++ = Softuart_Read(&softuartDevice);
-        //if (--size == 0 || !uart_rx_wait(self->timeout_char * 1000)) {
-        if (--size == 0) {
+        if (--size == 0 || !Softuart_rxWait(&softuartDevice, self->timeout_char * 1000)) {
             // return number of bytes read
             return buf - (uint8_t*)buf_in;
         }
@@ -182,8 +201,8 @@ STATIC mp_uint_t pyb_softuart_read(mp_obj_t self_in, void *buf_in, mp_uint_t siz
 }
 
 STATIC mp_uint_t pyb_softuart_write(mp_obj_t self_in, const void *buf_in, mp_uint_t size, int *errcode) {
-    //FIXME //pyb_softuart_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    //FIXME //const byte *buf = buf_in;
+    //pyb_softuart_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    const byte *buf = buf_in;
 
     /* TODO implement non-blocking
     // wait to be able to write the first character
@@ -195,6 +214,7 @@ STATIC mp_uint_t pyb_softuart_write(mp_obj_t self_in, const void *buf_in, mp_uin
 
     // write the data
     for (size_t i = 0; i < size; ++i) {
+        Softuart_Putchar(&softuartDevice, *buf++);
         //FIXME //uart_tx_one_char(self->uart_id, *buf++);
     }
 

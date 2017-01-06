@@ -15,7 +15,6 @@ typedef struct espconn espconn;
 
 int atoi(const char *nptr);
 void ets_install_putc1(void *routine);
-void ets_isr_attach(int intr, void *handler, void *arg);
 void ets_isr_mask(unsigned intr);
 void ets_isr_unmask(unsigned intr);
 int ets_memcmp(const void *s1, const void *s2, size_t n);
@@ -29,7 +28,6 @@ size_t ets_strlen(const char *s);
 int ets_strncmp(const char *s1, const char *s2, int len);
 char *ets_strncpy(char *dest, const char *src, size_t n);
 char *ets_strstr(const char *haystack, const char *needle);
-void ets_timer_arm_new(os_timer_t *a, int b, int c, int isMstimer);
 void ets_timer_disarm(os_timer_t *a);
 void ets_timer_setfn(os_timer_t *t, ETSTimerFunc *fn, void *parg);
 void ets_update_cpu_frequency(int freqmhz);

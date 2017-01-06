@@ -1,9 +1,12 @@
 #include "ets_sys.h"
-#include "user_interface.h"
-#include "espmissingincludes.h"
+#include "etshal.h"
 #include "osapi.h"
 #include "gpio.h"
 #include "os_type.h"
+#include "esp_mphal.h"
+#include "user_interface.h"
+#include "espmissingincludes.h"
+
 #include "softuart.h"
 
 //array of pointers to instances
@@ -193,27 +196,32 @@ void Softuart_Init(Softuart *s, uint32_t baudrate)
   //os_printf("SOFTUART INIT DONE\r\n");
 }
 
-void Softuart_Intr_Handler(Softuart *s)
+void Softuart_Intr_Handler(void *p)
 {
   uint8_t level, gpio_id;
-// clear gpio status. Say ESP8266EX SDK Programming Guide in  5.1.6. GPIO interrupt handler
+  // clear gpio status. Say ESP8266EX SDK Programming Guide in  5.1.6. GPIO interrupt handler
 
-    uint32_t gpio_status = GPIO_REG_READ(GPIO_STATUS_ADDRESS);
+  //ignore void* pointer and make a new pointer
+  Softuart *s;
+
+
+  uint32_t gpio_status = GPIO_REG_READ(GPIO_STATUS_ADDRESS);
   gpio_id = Softuart_Bitcount(gpio_status);
 
   //if interrupt was by an attached rx pin
-    if (gpio_id != 0xFF)
-    {
+  if (gpio_id != 0xFF)
+  {
     //load instance which has rx pin on interrupt pin attached
     s = _Softuart_GPIO_Instances[gpio_id];
 
-// disable interrupt for GPIO0
-        gpio_pin_intr_state_set(GPIO_ID_PIN(s->pin_rx.gpio_id), GPIO_PIN_INTR_DISABLE);
+    // disable interrupt for GPIO0
+    gpio_pin_intr_state_set(GPIO_ID_PIN(s->pin_rx.gpio_id), GPIO_PIN_INTR_DISABLE);
 
-// Do something, for example, increment whatyouwant indirectly
+    // Do something, for example, increment whatyouwant indirectly
     //check level
     level = GPIO_INPUT_GET(GPIO_ID_PIN(s->pin_rx.gpio_id));
-    if(!level) {
+    if(!level) 
+    {
       //pin is low
       //therefore we have a start bit
 
@@ -243,7 +251,6 @@ void Softuart_Intr_Handler(Softuart *s)
       }
 
       //store byte in buffer
-
       // if buffer full, set the overflow flag and return
       uint8 next = (s->buffer.receive_buffer_tail + 1) % SOFTUART_MAX_RX_BUFF;
       if (next != s->buffer.receive_buffer_head)
@@ -252,26 +259,24 @@ void Softuart_Intr_Handler(Softuart *s)
         s->buffer.receive_buffer[s->buffer.receive_buffer_tail] = d; // save new byte
         s->buffer.receive_buffer_tail = next;
       } 
-      else 
+      else
       {
         s->buffer.buffer_overflow = 1;
       }
 
       //wait for stop bit
-      os_delay_us(s->bit_time);  
-
+      os_delay_us(s->bit_time);
       //done
     }
-
     //clear interrupt
-        GPIO_REG_WRITE(GPIO_STATUS_W1TC_ADDRESS, gpio_status);
-
-// Reactivate interrupts for GPIO0
-        gpio_pin_intr_state_set(GPIO_ID_PIN(s->pin_rx.gpio_id), 3);
-  } else {
+    GPIO_REG_WRITE(GPIO_STATUS_W1TC_ADDRESS, gpio_status);
+    // Reactivate interrupts for GPIO0
+    gpio_pin_intr_state_set(GPIO_ID_PIN(s->pin_rx.gpio_id), 3);
+  } else
+  {
     //clear interrupt, no matter from which pin
     //otherwise, this interrupt will be called again forever
-        GPIO_REG_WRITE(GPIO_STATUS_W1TC_ADDRESS, gpio_status);
+    GPIO_REG_WRITE(GPIO_STATUS_W1TC_ADDRESS, gpio_status);
   }
 }
 
@@ -286,15 +291,43 @@ uint8_t Softuart_Read(Softuart *s)
 
   // Read from "head"
   uint8_t d = s->buffer.receive_buffer[s->buffer.receive_buffer_head]; // grab next byte
-  s->buffer.receive_buffer_head = (s->buffer.receive_buffer_head + 1) % SOFTUART_MAX_RX_BUFF; 
-  //d = 255; //FIXME for testing only
+  s->buffer.receive_buffer_head = (s->buffer.receive_buffer_head + 1) % SOFTUART_MAX_RX_BUFF;
   return d;
 }
+
+// Flush data from buffer
+uint32_t Softuart_Flush(Softuart *s)
+{
+  uint32_t num_chars = s->buffer.receive_buffer_tail - s->buffer.receive_buffer_head;
+  // Empty buffer
+  s->buffer.receive_buffer_head = 0;
+  s->buffer.receive_buffer_tail = 0;
+  return num_chars;
+}
+
 
 // Is data in buffer available?
 BOOL Softuart_Available(Softuart *s)
 {
   return (s->buffer.receive_buffer_tail + SOFTUART_MAX_RX_BUFF - s->buffer.receive_buffer_head) % SOFTUART_MAX_RX_BUFF;
+}
+
+// cversek:
+// based on micropython/esp8266/uart.c bool uart_rx_wait(uint32_t timeout_us)
+// Waits at most timeout microseconds for at least 1 char to become ready for reading.
+// Returns true if something available, false if not.
+BOOL Softuart_rxWait(Softuart *s, uint32_t timeout_us)
+{
+    uint32_t start = system_get_time();
+    for (;;) {
+        if (Softuart_Available(s)) {
+            return true; // have at least 1 char ready for reading
+        }
+        if (system_get_time() - start >= timeout_us) {
+            return false; // timeout
+        }
+        ets_event_poll();
+    }
 }
 
 static inline u8 chbit(u8 data, u8 bit)
