@@ -63,6 +63,7 @@ endif
 
 SRC_C = \
 	softuart.c \
+	machine_softuart.c \
 	strtoll.c \
 	main.c \
 	help.c \

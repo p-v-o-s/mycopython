@@ -134,6 +134,7 @@ SECTIONS
 
         build/main.o(.literal* .text*)
         *softuart.o(.literal* .text*)
+        *machine_softuart.o(.literal* .text*)
         *gccollect.o(.literal* .text*)
         *gchelper.o(.literal* .text*)
         *help.o(.literal* .text*)
