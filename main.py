@@ -3,6 +3,7 @@ import sys, time, ujson, gc, micropython, network
 
 #local imports
 from am2315 import AM2315
+from mhz14  import MHZ14
 from data_stream import DataStreamClient
 
 #DEBUG = False
@@ -14,8 +15,11 @@ SAMPLE_DELAY = 10 #seconds
 #should never be posted online
 config = ujson.load(open("SECRET_CONFIG.json",'r'))
 
-#configure sensor interface
+#configure humidity/temperature sensor interface
 ht_sensor = AM2315()
+
+#configure CO2 sensor interface
+co2_sensor = MHZ14()
 
 #check on the network status and wait until connected 
 #NOTE this is import after calling machine.reset()
@@ -39,12 +43,15 @@ dsc = DataStreamClient(host=dbs['host'],
 d = {} #stores sample data
 while True:
     try:
-        #acquire a data sample
+        #acquire a humidity and temperature sample
         ht_sensor.get_data(d)
+        #acquire CO2 concentration sample
+        co2_sensor.get_data(d)
+        #debug reporting
         if DEBUG:
             print(d)
         #push data to the data stream
-        reply = dsc.push_data(d.items())
+        #reply = dsc.push_data(d.items())
         if DEBUG:
             print(reply)
     except Exception as exc:
