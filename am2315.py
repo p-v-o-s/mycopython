@@ -4,8 +4,8 @@ import machine
 DEBUG = False
 #DEBUG = True
 
-NULL_BUFFER = bytearray(0)
-REQUEST_HUMID_TEMP = bytearray(b"\x03\x00\x04")
+CMD_NULL_REQUEST       = bytes(())
+CMD_REQUEST_HUMID_TEMP = bytes((0x03,0x00,0x04))
 
 class AM2315(object):
     """driver for Aosong AM2315 - Encased I2C Temperature/Humidity Sensor 
@@ -19,20 +19,20 @@ class AM2315(object):
     def _wakeup(self):
         ## Wake up the sensor by writing its address on the bus
         try:
-            self._i2c.writeto(self._addr, NULL_BUFFER)
+            self._i2c.writeto(self._addr, CMD_NULL_REQUEST)
         except OSError: #this is expected from a sleeping sensor with no ACK
             if DEBUG:
                 print("on first attempt, no ACK from addr: 0x%02x" % self._addr)
         time.sleep_ms(10)
         #repeat to confirm ACK
         try:
-            self._i2c.writeto(self._addr, NULL_BUFFER)
+            self._i2c.writeto(self._addr, CMD_NULL_REQUEST)
         except OSError: #not expected
             raise Exception("on second attempt, no ACK from addr: 0x%02x" % self._addr)
             
     def get_data(self, d = None):
         self._wakeup()
-        self._i2c.writeto(self._addr,REQUEST_HUMID_TEMP)
+        self._i2c.writeto(self._addr,CMD_REQUEST_HUMID_TEMP)
         time.sleep_ms(10)
         self._i2c.readfrom_into(self._addr,self._data_buff)
         db = self._data_buff
