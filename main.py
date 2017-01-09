@@ -2,9 +2,10 @@
 import sys, time, ujson, gc, micropython, network
 
 #local imports
+import network_setup
+from data_stream import DataStreamClient
 from am2315 import AM2315
 from mhz14  import MHZ14
-from data_stream import DataStreamClient
 
 #DEBUG = False
 DEBUG = True
@@ -21,24 +22,18 @@ ht_sensor = AM2315()
 #configure CO2 sensor interface
 co2_sensor = MHZ14()
 
-#check on the network status and wait until connected 
-#NOTE this is import after calling machine.reset()
-wlan = network.WLAN(network.STA_IF)
-for i in range(5):
-    if wlan.isconnected():
-        break
-    time.sleep(1.0)
-    if DEBUG:
-        print("waiting for WLAN to connect")
-else:
-    raise Exception("timed out waiting for network connection")
+#connect to the network
+network_setup.do_connect()
 
 #configure the persistent data stream client
 dbs = config['database_server_settings']
 dsc = DataStreamClient(host=dbs['host'],
+                       port=dbs['port'],
                        public_key=dbs['public_key'],
                        private_key=dbs['private_key'])
-
+                       
+ht_sensor.init()  #wakes the sensor up
+co2_sensor.init()  #wakes the sensor up
 #dsc.open_connection()
 d = {} #stores sample data
 while True:
@@ -49,16 +44,16 @@ while True:
         co2_sensor.get_data(d)
         #debug reporting
         if DEBUG:
-            print(d)
+            print("Data to be pushed:",d)
         #push data to the data stream
-        #reply = dsc.push_data(d.items())
+        reply = dsc.push_data(d.items())
         if DEBUG:
             print(reply)
     except Exception as exc:
         #write error to log file
-        errorlog = open("errorlog.txt",'w')
-        sys.print_exception(exc, errorlog)
-        errorlog.close()
+        #errorlog = open("errorlog.txt",'w')
+        #sys.print_exception(exc, errorlog)
+        #errorlog.close()
         if DEBUG:
             sys.print_exception(exc) #print to stdout
             #re raise the exception to halt the program
