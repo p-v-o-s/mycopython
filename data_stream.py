@@ -1,14 +1,15 @@
 DEBUG = False
-#DEBUG = True
+DEBUG = True
 
 import socket
 
 
 class DataStreamClient(object):
-    HTTP_GET_TEMPLATE = "GET /input/{public_key}?private_key={private_key}&{params} HTTP/1.0\r\nHost: {host}\r\n\r\n"
+    HTTP_GET_TEMPLATE = "GET /input/{public_key}?private_key={private_key}&{params} HTTP/1.0\r\nHost: {host}:{port}\r\n\r\n"
     
-    def __init__(self, host, public_key, private_key):
+    def __init__(self, host, port, public_key, private_key):
         self.host        = host
+        self.port        = port
         self.public_key  = public_key
         self.private_key = private_key
 
@@ -21,12 +22,16 @@ class DataStreamClient(object):
             private_key = self.private_key,
             params      = params,
             host        = self.host,
+            port        = self.port,
         )
         if DEBUG:
             print(req)
         #open a web socket and send GET request
         sock = socket.socket()
-        sock.connect(socket.getaddrinfo(self.host, 80)[0][-1])
+        addr = socket.getaddrinfo(self.host, self.port)[0][-1]
+        if DEBUG:
+            print("Connection made to addr:",addr)
+        sock.connect(addr)
         sock.send(bytes(req,'utf8'))
         #receive reply
         buff = []
