@@ -3,7 +3,6 @@ DEBUG = True
 
 import socket
 
-
 class DataStreamClient(object):
     HTTP_GET_TEMPLATE = "GET /input/{public_key}?private_key={private_key}&{params} HTTP/1.0\r\nHost: {host}:{port}\r\n\r\n"
     
@@ -43,6 +42,4 @@ class DataStreamClient(object):
                 break
         sock.close()
         reply = "".join(buff)
-        if DEBUG:
-            print(reply)
         return reply
