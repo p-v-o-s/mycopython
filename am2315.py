@@ -1,5 +1,6 @@
 import utime
 import machine
+#import board, bitbangio
 
 DEBUG = False
 #DEBUG = True
@@ -13,7 +14,12 @@ class AM2315(object):
        based on github.com/adafruit/Adafruit_AM2315
     """
     def __init__(self, scl = 5, sda = 4, i2c_addr = 0x5C):
-        self._i2c = machine.I2C(machine.Pin(scl),machine.Pin(sda))
+        #if scl is None:
+        #    scl = board.GPIO5
+        #if sda is None:
+        #    sda = board.GPIO4
+        #self._i2c = bitbangio.I2C(scl,sda) #FIXME wakeup doesn't work yet
+        self._i2c = machine.I2C(-1,machine.Pin(scl),machine.Pin(sda))
         self._addr = i2c_addr
         self._data_buff = bytearray(8)
         self.active = False
@@ -63,3 +69,13 @@ class AM2315(object):
                 temp = -temp
             d['temp'] = temp
             return d
+            
+################################################################################
+# TEST CODE
+################################################################################
+if __name__ == "__main__":
+    ht_sensor = AM2315()
+    ht_sensor.init()
+    d = {}
+    ht_sensor.get_data(d)
+    print(d)
