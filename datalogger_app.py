@@ -114,13 +114,6 @@ while True:
                     print("erasing cache file")
                 data_cache.close()
                 os.remove(DATA_CACHE_FILENAME)
-            #push the current data items
-            if DEBUG:
-                print("pushing items:",d.items())
-            #push data to the data stream
-            reply = dsc.push_data(d.items())
-            if DEBUG:
-                print(reply)
             #set the state on completion
             previous_connection_state = True
         #disconnected ----------------------------------------------------------
