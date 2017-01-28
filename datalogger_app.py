@@ -32,11 +32,11 @@ if DATA_CACHE_FILENAME in os.listdir():
         print("Removing file %s" % DATA_CACHE_FILENAME)
     os.remove(DATA_CACHE_FILENAME)
 
-#erase the previous error log file
-if ERROR_LOG_FILENAME in os.listdir():
-    if DEBUG >= 1:
-        print("Removing file %s" % ERROR_LOG_FILENAME)
-    os.remove(ERROR_LOG_FILENAME)
+##erase the previous error log file
+#if ERROR_LOG_FILENAME in os.listdir():
+#    if DEBUG >= 1:
+#        print("Removing file %s" % ERROR_LOG_FILENAME)
+#    os.remove(ERROR_LOG_FILENAME)
 
 #-------------------------------------------------------------------------------
 # Hardware setup
