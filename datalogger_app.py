@@ -4,20 +4,43 @@ from ucollections import OrderedDict
 
 #local imports
 import network_setup
-from data_stream  import DataStreamClient
+from data_stream  import DataStreamError, DataStreamClient
 from time_manager import TimeManager
 from am2315 import AM2315
 from mhz14  import MHZ14
 
 WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
 
+# FIXME get from config file instead
 DATA_CACHE_FILENAME = "data_cache.csv"
+ERROR_LOG_FILENAME  = "error_log.txt"
 
 #read the SECRET configuration file, NOTE this contains PRIVATE keys and 
 #should never be posted online
 config = ujson.load(open("SECRET_CONFIG.json",'r'))
 
-#GPIO setup
+#load configuration for this module
+app_cfg = config['datalogger_app']
+DEBUG   = app_cfg.get('debug', False)
+
+#-------------------------------------------------------------------------------
+# File system setup
+
+#erase the previous data cache file
+if DATA_CACHE_FILENAME in os.listdir():
+    if DEBUG >= 1:
+        print("Removing file %s" % DATA_CACHE_FILENAME)
+    os.remove(DATA_CACHE_FILENAME)
+
+#erase the previous error log file
+if ERROR_LOG_FILENAME in os.listdir():
+    if DEBUG >= 1:
+        print("Removing file %s" % ERROR_LOG_FILENAME)
+    os.remove(ERROR_LOG_FILENAME)
+
+#-------------------------------------------------------------------------------
+# Hardware setup
+
 led_pin  = machine.Pin(2, machine.Pin.OUT)
 
 def pulse_led(duration_ms = 1000):
@@ -33,13 +56,12 @@ ht_sensor = AM2315()
 #configure CO2 sensor interface
 co2_sensor = MHZ14()
 
-                       
 ht_sensor.init()   #wakes the sensor up
 co2_sensor.init()  #wakes the sensor up
 
+# ------------------------------------------------------------------------------
+# Network/Services setup
 
-
-#connect to the network
 sta_if, ap_if = network_setup.do_connect(**config['network_setup'])
 
 pulse_led(500)
@@ -54,6 +76,11 @@ print(TM.get_datetime())
 dsc = DataStreamClient(**config['data_stream'])
 
 
+################################################################################
+# Main Loop
+################################################################################
+tz_hour_shift   = app_cfg.get('tz_hour_shift', -5)
+sample_interval = app_cfg.get('sample_interval', 60)
 
 #preallocate slots in the data dictionary
 d = OrderedDict() #stores sample data
@@ -63,19 +90,19 @@ d['humid']         = None
 d['temp']          = None
 d['co2_ppm']       = None
 
-app_cfg = config['datalogger_app']
-debug           = app_cfg.get('debug', False)
-tz_hour_shift   = app_cfg.get('tz_hour_shift', -5)
-sample_interval = app_cfg.get('sample_interval', 60)
-
-previous_connection_state = True #on reboot, will cause data_cache to be opened if sta_if is not connected
+#on reboot, will cause data_cache to be opened if sta_if is not connected
+previous_connection_state = True
+current_connection_state  = True
 
 while True:
     start_ms = utime.ticks_ms()
     try:
+        if DEBUG >= 1:
+            print("-"*80)
+            print("--- MAIN LOOP START ---")
         #get the current time
         dt = TM.get_datetime() #(year, month, weekday, hour, min, second, millisecond)
-        if debug:
+        if DEBUG >= 1:
             print("raw dt =",dt)
         year, month, day, weekday, hour, minute, second, millisecond = dt
         d['rtc_timestamp'] = "{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{second:02d}".format(
@@ -88,77 +115,122 @@ while True:
         #acquire CO2 concentration sample
         co2_sensor.get_data(d) #adds field 'co2_ppm'
         #debug reporting
-        if debug:
+        if DEBUG >= 1:
             print("Data to be logged:",d)
         #check to see if we are still connected
-        #connected -------------------------------------------------------------
-        if sta_if.isconnected():
+        # CONNECTED ------------------------------------------------------------
+        current_connection_state = sta_if.isconnected()
+        if current_connection_state == True:
             #flash led once
             pulse_led(1000)
-            if previous_connection_state == True: #NORMAL we continue to be connected
-                if debug:
+            #NORMAL we continue to be connected
+            if previous_connection_state == True:
+                if DEBUG >= 1:
                     print("Network is connected.")
                 #push data to the data stream
                 reply = dsc.push_data(d.items())
-                if debug:
-                    print(reply)
-            else:                                 #RECOVERY we had just been disconnected and now we are online
-                if debug:
+                if DEBUG >= 1:
+                    print("<REPLY>\n<HEADER>\n{}\n</HEADER>\n<TEXT>\n{}</TEXT>\n</REPLY>".format(*reply))
+            #RECOVERY we had just been disconnected and now we are online
+            else:
+                if DEBUG >= 1:
                     print("Network connection has been restablished!")
                 #load data from flash cache and transmit all at once
-                data_cache.close()
-                data_cache = open(DATA_CACHE_FILENAME,'r')
-                for line in data_cache:
-                    #reconstruct items from values that were stored
-                    vals = line.strip().split(",")
-                    items = zip(d.keys(),vals)
-                    if debug:
-                        print("pushing cached items:",items)
-                    #push data to the data stream
-                    reply = dsc.push_data(items)
-                #finish data backlog upload, now erase the cache
-                if debug:
-                    print("erasing cache file")
-                data_cache.close()
-                os.remove(DATA_CACHE_FILENAME)
+                try:
+                    data_cache = open(DATA_CACHE_FILENAME,'r')
+                    for line in data_cache:
+                        #reconstruct items from values that were stored
+                        vals = line.strip().split(",")
+                        items = zip(d.keys(),vals)
+                        if DEBUG >= 1:
+                            print("pushing cached items:",items)
+                        #push data to the data stream
+                        reply = dsc.push_data(items)
+                    #finish data backlog upload, now erase the cache
+                    if DEBUG >= 1:
+                        print("erasing cache file")
+                finally:
+                    data_cache.close()
+                    os.remove(DATA_CACHE_FILENAME)
             #set the state on completion
             previous_connection_state = True
-        #disconnected ----------------------------------------------------------
+        # DISCONNECTED----------------------------------------------------------
         else:
             #flash led twice quickly as warning
             pulse_led(500)
             utime.sleep_ms(500)
             pulse_led(500)
             if previous_connection_state == True: #LOCAL DATA CACHE START
-                if debug:
+                if DEBUG >= 1:
                     print("Network connection has just been lost!")
                 #open flash cache file and start logging data to it
                 data_cache = open(DATA_CACHE_FILENAME,'a')
             #LOCAL DATA CACHE
             #format data as CSV
             line = ",".join(map(str,d.values()))
-            if debug:
+            if DEBUG >= 1:
                 print("Writing line to cache file:",line)
             data_cache.write(line)
             data_cache.write("\n")
             data_cache.flush()
             #set the state on completion
             previous_connection_state = False
+    #---------------------------------------------------------------------------
+    # Error Handling
     except Exception as exc:
+        if DEBUG >= 1:
+            print("*"*80)
+            print("*** ERROR_HANDLER ***")
         #write error to log file
-        #errorlog = open("errorlog.txt",'w')
-        #sys.print_exception(exc, errorlog)
-        #errorlog.close()
-        if debug:
+        errorlog = open(ERROR_LOG_FILENAME,'a')
+        dt = TM.get_datetime(force_RTC_time = True)
+        timestamp = "{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{second:02d}".format(
+                     year=year, month=month, day=day, hour=hour, minute=minute, second=second)
+        #ouput the header with timestamp
+        errorlog.write("#"*80)
+        errorlog.write("\n# {timestamp} - datalogger_app handled error\n".format(timestamp=timestamp))
+        errorlog.write("#"*(len(timestamp)+2))
+        errorlog.write("\n")
+        sys.print_exception(exc, errorlog)
+        
+        #count the number of data points in the cache
+        data_cache_size = 0
+        if DATA_CACHE_FILENAME in os.listdir():
+            try:
+                data_cache = open(DATA_CACHE_FILENAME,'r')
+                data_cache_size = len(data_cache.readlines)
+            finally:
+                data_cache.close()
+        
+        log_info_func = getattr(exc,'log_info', None) #object, method name, default
+        if log_info_func:
+            errorlog.write("#"*3)
+            errorlog.write("\n")
+            errorlog.write(log_info_func(
+                               current_connection_state  = current_connection_state,
+                               previous_connection_state = previous_connection_state,
+                               data_cache_size = data_cache_size,
+                           ))
+        errorlog.write("\n\n")
+        errorlog.close()
+        if DEBUG >= 1:
             sys.print_exception(exc) #print to stdout
+            print("*"*80)
+        if DEBUG >= 2:
             #re raise the exception to halt the program
-            raise exc
+            raise
+        
+    #---------------------------------------------------------------------------
+    # Cleanup
     finally:
+        if DEBUG >= 1:
+            print("-"*80)
+            print("--- CLEANUP ---")
         #do cleanup at end of loop
         #force garbage collection
         gc.collect()
         #print some debugging info
-        if debug:
+        if DEBUG >= 1:
             print("Memory Free: %d" % gc.mem_free())
             print(micropython.mem_info())
         #delay until next interval
