@@ -115,14 +115,21 @@ while True:
               year=year, month=month, day=day, hour=hour, minute=minute, second=second)
         local_hour = (hour + tz_hour_shift) % 24
         d['local_hour']    = local_hour
-        print("The day of the week is {day_name} and the local hour is {local_hour:d}.".format(day_name=WEEKDAYS[weekday], local_hour = local_hour))
+        if DEBUG >= 1:
+            print("The day of the week is {day_name} and the local hour is {local_hour:d}.".format(day_name=WEEKDAYS[weekday], local_hour = local_hour))
         #acquire a humidity and temperature sample
         ht_sensor.get_data(d)  #adds fields 'humid', 'temp'
         #acquire CO2 concentration sample
         co2_sensor.get_data(d) #adds field 'co2_ppm'
-        #debug reporting
-        if DEBUG >= 1:
-            print("Data to be logged:",d)
+        #Minimal Rporting
+        tmp = "{local_hour:02d}:{minute:02d}:{second:02d} - Data to be logged:"
+        report_header = tmp.format(local_hour = local_hour,
+                            minute = minute,
+                            second = second,
+                           )
+        print(report_header)
+        for key, val in d.items():
+            print("\t%s: %s" % (key,val))
         #check to see if we are still connected
         # CONNECTED ------------------------------------------------------------
         current_connection_state = sta_if.isconnected()
