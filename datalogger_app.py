@@ -121,13 +121,14 @@ while True:
         ht_sensor.get_data(d)  #adds fields 'humid', 'temp'
         #acquire CO2 concentration sample
         co2_sensor.get_data(d) #adds field 'co2_ppm'
-        #Minimal Rporting
-        tmp = "{local_hour:02d}:{minute:02d}:{second:02d} - Data to be logged:"
+        #Minimal Reporting
+        tmp = "# {local_hour:02d}:{minute:02d}:{second:02d}"
         report_header = tmp.format(local_hour = local_hour,
                             minute = minute,
                             second = second,
                            )
         print(report_header)
+        print("  - Data to be logged:")
         for key, val in d.items():
             print("\t%s: %s" % (key,val))
         #check to see if we are still connected
@@ -141,9 +142,14 @@ while True:
                 if DEBUG >= 1:
                     print("Network is connected.")
                 #push data to the data stream
-                reply = dsc.push_data(d.items())
+                response = dsc.push_data(d.items())
                 if DEBUG >= 1:
-                    print("<REPLY>\n<HEADER>\n{}\n</HEADER>\n<TEXT>\n{}</TEXT>\n</REPLY>".format(*reply))
+                    print("<RESPONSE>\n<HEADER>\n{}\n</HEADER>\n<TEXT>\n{}</TEXT>\n</RESPONSE>".format(*response))
+                #raise an Error if the data was not submitted
+                header, text = response
+                print("  - Data Stream Server response: %s" % text)
+                if text.strip() != "1 success":
+                    raise Exception("GET request failed with response text: %s" % text)
             #RECOVERY we had just been disconnected and now we are online
             else:
                 if DEBUG >= 1:
@@ -188,12 +194,17 @@ while True:
 #            data_cache.flush()
             #set the state on completion
             previous_connection_state = False
+            raise Exception("The network connection is down.")
     #---------------------------------------------------------------------------
     # Error Handling
     except Exception as exc:
+        print("*"*80)
+        print("*** ERROR_HANDLER ***")
+        sys.print_exception(exc) #print to stdout
+        if DEBUG == 0:
+            print("Ignoring the error, continuing the main loop...")
         if DEBUG >= 1:
-            print("*"*80)
-            print("*** ERROR_HANDLER ***")
+            print("Logging the error to '%s' ..." % ERROR_LOG_FILENAME)
             #write error to log file
             errorlog = open(ERROR_LOG_FILENAME,'a')
             dt = TM.get_datetime(force_RTC_time = True)
@@ -226,12 +237,11 @@ while True:
                                ))
             errorlog.write("\n\n")
             errorlog.close()
-            sys.print_exception(exc) #print to stdout
-            print("*"*80)
         if DEBUG >= 2:
             #re raise the exception to halt the program
             raise
-        
+        # end of Error Handling
+        print("*"*80)
     #---------------------------------------------------------------------------
     # Cleanup
     finally:
