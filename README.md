@@ -75,7 +75,7 @@ Run the shell script `./run_repl.sh`, either with `sudo` prepended or adding the
 ```
 screen /dev/ttyUSB0 115200
 ```
-Use the key-stroke <ctrl-c> to halt the running code and enter into the REPL. Here is an example session that checks the filesystem - on a fresh installation you should see similar output when you enter the same commands:
+Use the key-stroke `<ctrl-c>` to halt the running code and enter into the REPL. Here is an example session that checks the filesystem - on a fresh installation you should see similar output when you enter the same commands:
 ```
 Adafruit CircuitPython v1.8.5-20161020-563-g4ae191a on 2017-01-18; ESP module with ESP8266
 >>> import os
@@ -92,7 +92,7 @@ None
 None
 >>> 
 ```
-Finally, use the keystroke <ctrl-d> to soft reboot the application.  Avoid pressing any keys and in 5 seconds the `datalogger_app` should start up; below is example output:
+Finally, use the keystroke `<ctrl-d>` to soft reboot the application.  Avoid pressing any keys and in 5 seconds the `datalogger_app` should start up; below is example output:
 ```
 PYB: soft reboot
 #6 ets_task(40100164, 3, 3fff850c, 4)
